@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# -----------------------------------SERVICE-----------------------------------
+# NetHub service for connecting to supernode.
+# -----------------------------------------------------------------------------
+
+# Imports.
+. nethub.conf
+. libraries/exceptions.sh
+
+# Check if required variables are set.
+if [[ -z "${supernode_community}" ]]; then raise 7 "No community set..."; fi
+if [[ -z "${supernode_address}" ]]; then raise 7 "No address set..."; fi
+if [[ -z "${supernode_port}" ]]; then raise 7 "No port set..."; fi
+if [[ -z "${supernode_fedkey}" ]]; then raise 7 "No federation key set..."; fi
+if [[ -z "${supernode_key}" ]]; then raise 7 "No encryption key set..."; fi
+
+#Establish connection with the configured supernode server.
+edge \
+-f \
+-A5 \
+-c "${supernode_community}" \
+-l "${supernode_address}":"${supernode_port}" \
+-P "${supernode_fedkey}" \
+-k "${supernode_key}" \
+-I "${supernode_username}" \
+-J "${supernode_password}"

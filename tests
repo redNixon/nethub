@@ -1,0 +1,236 @@
+#!/bin/bash
+
+# --------------------------------Testing--------------------------------------
+# Custom testing framework for nethub.
+# -----------------------------------------------------------------------------
+
+# Imports.
+. libraries/colors.sh
+
+# Keep count of passed and failed tests.
+failed=0
+passed=0
+
+# Sets the status for the last command
+# and increments failed or passed tests variable.
+# $1 : bool : forced exitcode
+function check_exit {
+    # Set the exit code as forced failure or as actual exitcode.
+    if [[ -z ${1} ]]; then exitcode=$?; else exitcode=${1}; fi
+    # If the exit code isn't false the test failed.
+    if [[ ${exitcode} = false ]]; then
+        status=$(red "Failure")
+        failed=$((failed+1))
+    else
+        status=$(green "Success")
+        passed=$((passed+1))
+    fi
+}
+
+# Tests a single command and shows the status.
+# $1 : str : name of test.
+# $2 : str : command with arguments.
+# $3 : bool : hide output if true.
+# $4 : str : search for something in output.
+function test {
+    # Run the command and retrieve the output.
+    output=$(${2} 2>&1)
+
+    # Get something from the output.
+    if [[ -n "${4}" ]]; then
+        output=$(echo "${output}" | grep -oP "${4}")
+    fi
+
+    # Optionally hide the output.
+    if [[ -n "${3}" ]] && [[ ${3} = true ]] && [[ -z "${4}" ]]; then
+        output="hidden"
+    fi
+
+    # Check and assign the output status.
+    if [[ -n ${4} ]] && [[ -z "${output}" ]]; then
+        # Force failure.
+        check_exit false;
+    else
+        # Continue by checking the actual exitcode.
+        check_exit;
+    fi
+
+    # Show the result of the test.
+    echo "Running test: $(bold "${1}")"
+    echo "Command: ${2}"
+    echo "Status: ${exitcode} : ${status}"
+    echo "Output: ${output}"
+    echo "----------------------------------------"
+}
+
+# Shows the amount of failed and passed tests.
+function results {
+    total=$((failed+passed))
+    echo "$(green "${passed}") out of ${total} passed."
+    echo "$(red "${failed}") out of ${total} failed"
+    echo "----------------------------------------"
+}
+
+echo "----------------------------------------"
+
+function test_standard_connection {
+
+    # NordVPN UDP connection to Belgium.
+
+    name="Connect to NordVPN"
+    command="./nethub connect nord --udp --country be"
+    test "${name}" "${command}"
+    sleep 4
+
+    name="Test connection country"
+    command="./nethub status connection"
+    test "${name}" "${command}" true "BE"
+    name="Test connection protocol"
+    command="./nethub get server"
+    test "${name}" "${command}" false "udp"
+
+    # ProtonVPN TCP connection to The Netherlands.
+    name="Connect to ProtonVPN"
+    command="./nethub connect proton --tcp --country nl"
+    test "${name}" "${command}"
+    sleep 4
+
+    name="Test new connection"
+    command="./nethub status connection"
+    test "${name}" "${command}" true "NL"
+
+    name="Test connection protocol"
+    command="./nethub get server"
+    test "${name}" "${command}" false "tcp"
+}
+
+function test_secure_connection {
+
+    # NordVPN TCP secure connection to The United States.
+
+    name="Connect to NordVPN"
+    command="./nethub connect nord --secure --tcp --country us"
+    test "${name}" "${command}"
+    sleep 4
+
+    name="Test new connection"
+    command="./nethub status connection"
+    test "${name}" "${command}" true "US"
+
+    name="Test connection protocol"
+    command="./nethub get server"
+    test "${name}" "${command}" true "tcp"
+
+    name="Test double server"
+    command="./nethub get server"
+    test "${name}" "${command}" true "\-us"
+
+    # ProtonVPN UDP secure connection to France.
+
+    name="Connect to ProtonVPN"
+    command="./nethub connect proton --secure --udp --country fr"
+    test "${name}" "${command}"
+    sleep 4
+
+    name="Test ProtonVPN connection"
+    command="./nethub status connection"
+    test "${name}" "${command}" false "FR"
+
+    name="Test ProtonVPN connection protocol"
+    command="./nethub get server"
+    test "${name}" "${command}" true "udp"
+
+    name="Test ProtonVPN double server"
+    command="./nethub get server"
+    test "${name}" "${command}" true "\-fr\-"
+}
+
+function test_get {
+
+    # Test get functions using ProtonVPN.
+
+    server="nl-43.protonvpn.com.udp.ovpn"
+
+    name="Connect to ProtonVPN"
+    command="./nethub connect proton --server ${server}"
+    test "${name}" "${command}"
+
+    name="Get provider"
+    command="./nethub get vpn"
+    test "${name}" "${command}" false "proton"
+
+    name="Get country"
+    command="./nethub get country"
+    test "${name}" "${command}" false "nl"
+
+    name="Get server"
+    command="./nethub get server"
+    test "${name}" "${command}" false "./proton_standard_servers/udp/${server}"
+
+
+    # Test get functions using NordVPN.
+
+    server="nl755.nordvpn.com.udp.ovpn"
+
+    name="Connect to NordVPN"
+    command="./nethub connect nord --server ${server}"
+    test "${name}" "${command}"
+
+    name="Get provider"
+    command="./nethub get vpn"
+    test "${name}" "${command}" false "nord"
+
+    name="Get country"
+    command="./nethub get country"
+    test "${name}" "${command}" false "nl"
+
+    name="Get server"
+    command="./nethub get server"
+    test "${name}" "${command}" false "./nord_servers/ovpn_udp/${server}"
+}
+
+function test_statuses {
+    name="DHCP service status"
+    command="./nethub status dhcp"
+    test "${name}" "${command}"
+
+    name="OpenVPN service status"
+    command="./nethub status openvpn"
+    test "${name}" "${command}"
+
+    name="Nethub VPN service status"
+    command="./nethub status vpn"
+    test "${name}" "${command}"
+
+    name="Nethub Edge service status"
+    command="./nethub status edge"
+    test "${name}" "${command}"
+
+    name="VPN Connection status"
+    command="./nethub status connection"
+    test "${name}" "${command}"
+}
+
+function test_searching {
+    name="Search ProtonVPN servers"
+    command="./nethub search proton --country fr"
+    test "${name}" "${command}" true
+
+    name="Search ProtonVPN node servers"
+    command="./nethub search proton --node --country us"
+    test "${name}" "${command}" true
+
+    name="Search NordVPN servers"
+    command="./nethub search nord --udp --country us"
+    test "${name}" "${command}" true
+}
+
+# Tests to run.
+test_standard_connection
+test_secure_connection
+test_get
+test_statuses
+test_searching
+
+# Show testing results.
+results

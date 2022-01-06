@@ -1,0 +1,99 @@
+#!/bin/bash
+
+# ---------------------------------BUILD---------------------------------------
+# Creates a new debian installer for nethub.
+# -----------------------------------------------------------------------------
+
+
+# Stop post-installation if an error occurs.
+set -e
+
+# Make sure $CWD is folder of script.
+cd "$(dirname "$0")"
+
+# Imports
+. libraries/checks.sh
+. libraries/exceptions.sh
+
+# Create output folders.
+function create_output_folders {
+    folder="nethub_${nethub_version}_amd64"
+    mkdir "${folder}"
+    mkdir "${folder}/DEBIAN/"
+    mkdir -p "${folder}/opt/nethub/"
+}
+
+# Copy required build files.
+function copy_required {
+    # Copy postinst, postrm and preinst scripts.
+    cp -r setup "${folder}/DEBIAN/postinst"
+    # Copy libraries and resources folders.
+    cp -r libraries "${folder}/opt/nethub/"
+    cp -r resources "${folder}/opt/nethub/"
+    # Copy nethub main and services scripts.
+    cp -r services "${folder}/opt/nethub/"
+    cp nethub "${folder}/opt/nethub/"
+}
+
+# Copy optional buils files (for direct deployment).
+function copy_optional {
+    # Only copy optionals if the -o flag is set.
+    if [[ -n "${optional}" ]]; then
+        # Copy NordVPN and ProtonVPN server configurations.
+        echo "Copying NordVPN servers."
+        rsync -har --info=progress2 nord_servers "${folder}/opt/nethub/"
+        echo "Copying ProtonVPN standard servers."
+        rsync -har --info=progress2 proton_standard_servers "${folder}/opt/nethub/"
+        echo "Copying ProtonVPN secure servers."
+        rsync -har --info=progress2 proton_secure_servers "${folder}/opt/nethub/"
+        # Copy configurations to "${folder}/opt/nethub/"
+        cp proton.creds "${folder}/opt/nethub/"
+        cp nord.creds "${folder}/opt/nethub/"
+        cp nethub.conf "${folder}/opt/nethub/"
+    fi
+}
+
+# Create the debian installer control file.
+function create_control_file {
+    cat <<EOT > "${folder}/DEBIAN/control"
+Package: nethub
+Version: ${nethub_version}
+Depends: openvpn, resolvconf, isc-dhcp-server, unzip, curl, iptables-persistent, dialog
+Architecture: amd64
+Maintainer: Kevin de Ruijter
+Description: Nethub is a virtual gateway-service for NordVPN, ProtonVPN and N2N networking.
+EOT
+}
+
+# Build the debian installer and remove the build folder.
+function build_and_clean {
+    dpkg-deb --build "${folder}"
+    rm -rf "${folder}"
+}
+
+# Parse all the arguments until there are none left.
+while [ $# -gt 0 ]; do
+    # Aassign the -/-- option and it's argument
+    # so they can be used in functions without being passed.
+    opt="${1}"; arg="${2}"
+    case "${1}" in
+        -v|--version) check_arg; nethub_version="${arg}" ;;
+        -o|--optional) optional=true ;;
+        --*|-*) echo "Option ${opt} doesn't exist."; exit 1 ;;
+    esac
+    # Shift positional parameters.
+    # i.e. del <- $1 <- $2
+    shift
+done
+
+# Require a version for creating the release.
+if [ -z "${nethub_version}" ]; then
+    echo "Please specify a version."; exit 1
+fi
+
+# Run all the build functions.
+create_output_folders
+copy_required
+copy_optional
+create_control_file
+build_and_clean

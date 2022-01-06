@@ -1,0 +1,237 @@
+#!/bin/bash
+
+# Stop if an error occurs.
+set -e
+
+NETHUB_VERSION="V0.0.1"
+
+# Display a confirmation message for installing Nethub.
+function display_warning {
+    message="\Z1Nethub will heavily modify how this system functions.\n\n\
+    \ZnAre you sure you want to continue!"
+    dialog --colors --backtitle "Nethub ${NETHUB_VERSION} Setup"\
+    --yesno "${message}" 0 0
+}
+
+
+# Assist the user to define the WAN and LAN interfaces.
+function define_interfaces {
+
+    # Find interfaces and create options arrays.
+    declare -a options
+    interfaces=($(ip a | grep -oP "(?<=^\d: )[^:]+"))
+    for (( i=0; i<${#interfaces[@]}; i++ )); do
+        options+=($i ${interfaces[$i]})
+    done
+
+    # Ask for the WAN interface.
+    wanif=${interfaces[\
+    $(dialog --stdout --backtitle "Nethub ${NETHUB_VERSION} Setup"\
+    --menu "Select your WAN interface:" 0 0 0 ${options[@]})\
+    ]}
+
+    # Ask for the LAN interface.
+    lanif=${interfaces[\
+    $(dialog --stdout --backtitle "Nethub ${NETHUB_VERSION} Setup"\
+    --menu "Select your LAN interface:" 0 0 0 ${options[@]})\
+    ]}
+}
+
+# Define the networking variables for Nethub and clients.
+function define_addresses {
+
+    # Converts cidr to netmask address.
+    function convert_cidr {
+        local i mask=""
+        local full_octets=$(($1/8))
+        local partial_octet=$(($1%8))
+        for ((i=0;i<4;i+=1)); do
+            if [ $i -lt $full_octets ]; then
+                mask+=255
+            elif [ $i -eq $full_octets ]; then
+                mask+=$((256 - 2**(8-$partial_octet)))
+            else
+                mask+=0
+            fi  
+            test $i -lt 3 && mask+=.
+        done
+        echo $mask
+    }
+
+    # Define network configuration variables for Nethub.
+    values=($(dialog \
+    --stdout \
+    --backtitle "Nethub ${NETHUB_VERSION} Setup" \
+    --ok-label "Submit" \
+    --form \
+    "Nethub network" 0 0 0 \
+	"CIDR:"     1 1	"24" 	        1 10 10 0 \
+	"Subnet:"   2 1	"10.20.0.0"  	2 10 10 0 \
+	"Address:"  3 1	"10.20.0.0"  	3 10 10 0 \
+	"DNS:"      4 1	"10.8.8.1" 	    4 10 10 0))
+
+    # Assign dialog output to variables.
+    nethub_cidr=${values[0]}
+    nethub_netmask=$(convert_cidr ${nethub_cidr})
+    nethub_address=${values[1]}
+    nethub_dns=${values[2]}
+    nethub_subnet=${values[3]}
+    
+    # Define network configuration variables for clients.
+    values=($(dialog \
+    --stdout \
+    --backtitle "Nethub ${NETHUB_VERSION} Setup" \
+    --ok-label "Submit" \
+    --form \
+    "Client network" 0 0 0 \
+    "DHCP DNS:" 1 1	"8.8.8.8" 	    1 10 10 0 \
+	"DHCP Min:" 2 1	"10.20.0.10" 	2 10 10 0 \
+	"DHCP Max:" 3 1	"10.20.0.100" 	3 10 10 0))
+
+    # Assign dialog output to variables.
+    dhcp_dns=${values[0]}
+    dhcp_first_ip=${values[1]}
+    dhcp_last_ip=${values[2]}
+}
+
+# Overwrites and applies the netplan using the defined WAN and LAN interfaces.
+function configure_netplan {
+    # Write the netplan.
+    cat <<EOT > /etc/netplan/50-cloud-init.yaml
+network:
+    ethernets:
+        ${wanif}:
+            dhcp4: true
+            nameservers:
+                addresses:
+                    [${nethub_dns}]
+        ${lanif}:
+            addresses:
+                - ${nethub_address}/${nethub_cidr}
+            nameservers:
+                addresses:
+                    [${nethub_dns}]
+    version: 2
+EOT
+    # Apply the netplan.
+    netplan apply
+}
+
+# Configure the iptables for function as a gateway and killswitch.
+function configure_iptables {
+    
+    # Enable ipv4 forwarding.
+	echo 1 > /proc/sys/net/ipv4/ip_forward
+	sysctl -p
+
+    # Masquerade outgoing traffic.
+	iptables -t nat -A POSTROUTING -o "${wanif}" -j MASQUERADE
+	iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE
+	
+    # Drop connections to local network (KillSwitch).
+	iptables -A FORWARD -i "${lanif}" -o "${wanif}" -j DROP
+
+    # Forward and masquerade outgoing traffic to n2n edge.
+    iptables -A FORWARD -i "${lanif}" -o edge0 -j ACCEPT
+    iptables -t nat -A POSTROUTING -o edge0 -j MASQUERADE
+
+	# Make iptables persistent
+    sudo netfilter-persistent save
+    sudo netfilter-persistent reload
+}
+
+# Configures and enables DHCP distribution to Nethub clients.
+function configure_dhcp {
+    cat <<EOT > /etc/dhcp/dhcpd.conf
+option domain-name-servers ${dhcp_dns};
+default-lease-time 600;
+max-lease-time 7200;
+ddns-update-style none;
+authoritative;
+subnet ${nethub_subnet} netmask ${nethub_netmask} {
+  range ${dhcp_first_ip} ${dhcp_last_ip};
+  option routers ${nethub_address};
+}
+EOT
+    # Enable and start the dhcp-server service.
+	systemctl enable isc-dhcp-server.service
+	systemctl start isc-dhcp-server.service
+}
+
+
+# Configures and enables the VPN and N2N services.
+function configure_services {
+
+    # Create the VPN service for connecting NordVPN or ProtonVPN.
+    cat <<EOT > /etc/systemd/system/nethub_vpn.service
+[Unit]
+After=network.service
+
+[Service]
+WorkingDirectory=/opt/nethub/
+ExecStart=/opt/nethub/services/nethub_vpn
+
+[Install]
+WantedBy=default.target
+EOT
+
+    # Create the Edge service for connecting to the Supernode.
+    cat <<EOT > /etc/systemd/system/nethub_edge.service
+[Unit]
+After=network.service
+
+[Service]
+WorkingDirectory=/opt/nethub/
+ExecStart=/opt/nethub/services/nethub_edge
+
+[Install]
+WantedBy=default.target
+EOT
+
+    # Register the services.
+    systemctl daemon-reload
+    # Make the services start on boot.
+    systemctl enable nethub_vpn.service
+    systemctl enable nethub_edge.service
+}
+
+# Add bashrc configurations for Nethub.
+function configure_bashrc {
+    # Check if bashrc has already been modified.
+    if ! grep -q '^alias nethub=' ~/.bashrc; then
+        # Allow the Nethub command to enter the interface.
+        echo "alias nethub=\"/opt/nethub/nethub\"" >> /home/"${SUDO_USER}"/.bashrc
+        # Start the Nethub interface when bashrc is initialized.
+        echo "/opt/nethub/nethub -i" >> /home/"${SUDO_USER}"/.bashrc
+    fi
+}
+
+# Installs the manpage for Nethub.
+function configure_manpage {
+    # Create the manpage folder if it didn't already exist.
+    mkdir -p /usr/local/man/man1
+    # Copy the raw manpage.
+    cp /opt/nethub/resources/manpage /usr/local/man/man1/nethub.1
+    # Compress the manpage with gzip.
+    gzip -f /usr/local/man/man1/nethub.1
+}
+
+# Configure sudoers file so systemctl doesn't require permissions.
+function configure_permissions {
+    change="${SUDO_USER} ALL=(ALL:ALL) NOPASSWD:/bin/systemctl"
+    if ! grep -q 'systemctl=' /etc/sudoers; then
+        echo "${change}" | sudo EDITOR='tee -a' visudo
+    fi
+}
+
+
+display_warning
+define_interfaces
+define_addresses
+#configure_netplan
+#configure_iptables
+#configure_dhcp
+#configure_services
+#configure_bashrc
+#configure_manpage
+#configure_permissions

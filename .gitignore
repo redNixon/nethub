@@ -1,0 +1,9 @@
+# Ignored files.
+nethub.conf
+*.ovpn
+.DS_Store
+*.deb
+*.creds
+
+# Ignored folders.
+nethub_*_amd64

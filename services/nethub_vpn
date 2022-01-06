@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# -----------------------------------SERVICE-----------------------------------
+# NetHub service for connecting to VPN provider.
+# -----------------------------------------------------------------------------
+
+# Imports.
+. nethub.conf
+. libraries/exceptions.sh
+
+# Set connection variables based on selected provider.
+username="${vpn}_username";username="${!username}"
+password="${vpn}_password";password="${!password}"
+server="${vpn}_server";server="${!server}"
+
+# Check if required variables are set.
+if [[ -z "${vpn}" ]]; then raise 7 "No VPN set..."; fi
+if [[ -z "${username}" ]]; then raise 7 "No username set... ${PWD}"; fi
+if [[ -z "${password}" ]]; then raise 7 "No password set..."; fi
+if [[ -z "${server}" ]]; then raise 7 "No server set..."; fi
+
+# Write credentials file.
+printf "${username}\n${password}" > "${vpn}".creds
+
+# Re-enable ipv4 forwarding.
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+# Establish connection with the configured openvpn server file.
+# The --route option enables connection to supernode without a VPN connection.
+openvpn --config "${server}" \
+--auth-user-pass ./"${vpn}".creds \
+--route "${supernode_address}" 255.255.255.255 net_gateway

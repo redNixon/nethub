@@ -1,0 +1,484 @@
+#!/bin/bash
+
+# ---------------------------------NETHUB-------------------------------------
+# This is the main binary for Nethub.
+# ----------------------------------------------------------------------------
+
+# Nethub version string.
+NETHUB_VERSION="V0.0.1"
+
+# Alters output of functions in libraries and the main nethub script.
+interface_mode=false
+
+# Make sure $CWD is folder of script.
+cd "$(dirname "${0}")"
+
+# Imports.
+. nethub.conf
+. libraries/colors.sh
+. libraries/checks.sh
+. libraries/exceptions.sh
+. libraries/settings.sh
+. libraries/interface.sh
+
+# Create settings file if it doesn't already exist.
+if [[ ! -f "nehub.conf" ]]; then
+    touch nethub.conf
+fi
+
+# Declare array with VPN providers.
+declare -a providers=("nord" "proton" "edge")
+
+# Declare array with available statuses / services.
+declare -a statuses=("openvpn" "dhcp" "connection" "vpn" "edge")
+
+# Addresses to use when testing connection.
+ping_address="8.8.8.8"
+curl_address="ipinfo.io"
+
+# Get available countries for VPN providers.
+proton_abbr=$(ls proton_standard_servers/ | grep -oP "^..(?=\-)" | uniq | tr '\n' ' ')
+nord_abbr=$(ls nord_servers/ovpn_udp/ | grep -oP "^.." | uniq | tr '\n' ' ')
+
+# Set the vpn provider and restart the service.
+function restart_vpn_service {
+    # Connect directly to a country if country filter is set.
+    if [[ -n "${country_filter}" ]]; then
+        random_flag=true
+        server=$(search_servers "${1}")
+    fi
+    # Setting $vpn will make apply_settings save the vpn variable.
+    # It normally doesn't do this so you can set specific vpn settings
+    # without changing the vpn selected to be active.
+    vpn="${1}"
+    # Saves the $server and $vpn to nethub.conf.
+    apply_settings "${1}"
+    # Restarts the nethub service to connect conform new settings.
+    sudo systemctl restart nethub_vpn.service
+}
+
+# Restart nethub_edge.service and establish supernode connection.
+function restart_edge_service {
+    sudo systemctl restart nethub_edge.service
+    # If enable flag is given, enable nethub_edge.service.
+    if [[ -n ${enable_service} ]]; then
+        sudo systemctl enable nethub_edge.service
+    fi
+}
+
+# Stop nethub_vpn.service and kill vpn connection.
+function stop_vpn_service {
+    sudo systemctl stop nethub_vpn.service
+}
+
+# Stop nethub_edge.service and kill supernode connection.
+function stop_edge_service {
+    sudo systemctl stop nethub_edge.service
+    # If disable flag is given, disable nethub_edge.service.
+    if [[ -n ${disable_service} ]]; then
+        sudo systemctl disable nethub_edge.service
+    fi
+}
+
+
+# Searches for available ProtonVPN servers using
+# user-defined filters and toggles.
+function search_proton_servers {
+
+
+    if [[ -z ${tcp_toggle} ]] && [[ -z ${udp_toggle} ]]; then
+        raise 3 "Either --tcp or --udp must be set when searching."
+    else
+        if [[ ${tcp_toggle} = true ]]; then protocol="tcp"; fi
+        if [[ ${udp_toggle} = true ]]; then protocol="udp"; fi
+    fi
+
+    if [[ -n ${secure_toggle} ]] && [[ ${secure_toggle} = true ]]; then
+        # Get all secure servers.
+        results=$(ls proton_secure_servers/"${protocol}" | grep -v "free")
+    fi
+
+    if [[ -z ${secure_toggle} ]] || [[ ${secure_toggle} = false ]]; then
+        # Get all regular servers. Not i.e. fr-ch or fr-onion.
+        results=$(ls proton_standard_servers/"${protocol}" | grep -v "free")
+    fi
+
+    # Get all the servers conform the country abbreviation.
+    results=$(echo "${results}" | grep "${country_filter}\-" || :;)
+
+    # Apply the node servers only toggle if set.
+    if [[ -n ${node_toggle} ]]; then
+        results=$(echo "${results}" | grep "node\-" || :;)
+    fi
+
+    # Raise an error if no servers were found.
+    if [[ -z "${results}" ]]; then
+        raise 3 "No servers found with your filters."
+    fi
+
+    # Display the results.
+    echo "${results}" | less
+}
+
+# Searches for available NordVPN servers using
+# user-defined filters and toggles.
+function search_nord_servers {
+    # Make sure either UDP or TCP protocol is set.
+    if [[ -z ${tcp_toggle} ]] && [[ -z ${udp_toggle} ]]; then
+        raise 3 "Either --tcp or --udp must be set when searching."
+    else
+        if [[ ${tcp_toggle} = true ]]; then protocol="tcp"; fi
+        if [[ ${udp_toggle} = true ]]; then protocol="udp"; fi
+    fi
+
+    if [[ -n ${secure_toggle} ]] && [[ ${secure_toggle} = true ]]; then
+        # Get all secure servers.
+        results=$(ls nord_servers/ovpn_"${protocol}"/ |
+        grep -P "[a-z]{2}-${country_filter}\d" || :;)
+    fi
+
+    if [[ -z ${secure_toggle} ]] || [[ ${secure_toggle} = false ]]; then
+        # Get all regular servers. Not i.e. fr-ch or fr-onion.
+        results=$(ls nord_servers/ovpn_"${protocol}"/ |
+        grep -P "^${country_filter}\d" || :;)
+    fi
+
+    # Raise an error if no servers were found.
+    if [[ -z "${results}" ]]; then
+        raise 3 "No servers found with your filters."
+    fi
+
+    # Display the results.
+    echo "${results}" | less
+}
+
+# Search for either NordVPN or ProtonVPN servers.
+# $1 : str : server provider (nord|proton)
+function search_servers {
+    # Make sure a country filter is set.
+    if [[ -z "${country_filter}" ]]; then
+        raise 3 "Please provide a country abbreviation using --country."
+    fi
+
+    # Retrieve random either NordVPN or ProtonVPN server.
+    # if the --random option was given.
+    if [[ -n ${random_flag} ]]; then
+        if [[ "${1}" = "nord" ]]; then
+            search_nord_servers | sort -R | head -n 1
+        fi
+        if [[ "${1}" = "proton" ]]; then
+            search_proton_servers | sort -R | head -n 1
+        fi
+    else
+        if [[ "${1}" = "nord" ]]; then search_nord_servers; fi
+        if [[ "${1}" = "proton" ]]; then search_proton_servers; fi
+    fi
+}
+
+# Displays the NetHub vpn service status.
+function nethub_vpn_status {
+    if [[ -z ${advanced} ]]; then
+        if systemctl is-active --quiet nethub_vpn.service; then
+            green "Running"; code=0
+        else
+            if systemctl is-enabled --quiet nethub_vpn.service; then
+                red "Stopped"; code=1
+            else
+                red "Disabled"; code=1
+            fi
+        fi
+    else
+        systemctl status nethub_vpn.service
+    fi
+}
+
+# Return Error if the connection to supernode isn't successful.
+function nethub_edge_health {
+    if [[ "$(systemctl status nethub_edge.service)" = *"ERROR"* ]]; then
+        red "Error"; code=1
+    else
+        green "Running"; code=0
+    fi
+}
+
+# Displays the NetHub vpn service status.
+function nethub_edge_status {
+    if [[ -z ${advanced} ]]; then
+        if systemctl is-active --quiet nethub_edge.service; then
+            nethub_edge_health
+        else
+            if systemctl is-enabled --quiet nethub_edge.service; then
+                red "Stopped"; code=1
+            else
+                red "Disabled"; code=1
+            fi
+        fi
+    else
+        systemctl status nethub_edge.service
+    fi
+}
+
+# Displays the OpenVPN service status.
+function openvpn_status {
+    if [[ -z ${advanced} ]]; then
+        if systemctl is-active --quiet openvpn.service; then
+            green "Running"; code=0
+        else
+            if systemctl is-enabled --quiet openvpn.service; then
+                red "Stopped"; code=1
+            else
+                red "Disabled"; code=1
+            fi
+        fi
+    else
+        systemctl status openvpn.service
+    fi
+}
+
+
+# Displays the DHCP service status.
+function dhcp_status {
+    if [[ -z ${advanced} ]]; then
+        if systemctl is-active --quiet isc-dhcp-server.service; then
+            green "Running"; code=0
+        else
+            if systemctl is-enabled --quiet isc-dhcp-server.service; then
+                red "Stopped"; code=1
+            else
+                red "Disabled"; code=1
+            fi
+        fi
+    else
+        systemctl status isc-dhcp-server.service
+    fi
+}
+
+
+# Displays the connection status.
+function connection_status {
+    if ! $interface_mode; then
+        echo "Fetching connection information. This may ~4 seconds."
+    fi
+
+    if ! ping_result=$(ping -I tun0 -c 3 "${ping_address}"); then
+        if ! $interface_mode; then
+            raise 7 "Could not connect to the internet."
+        else
+            echo $(red "Could not connect to the internet.")
+        fi
+    else
+        address_result=$(curl --interface tun0 -s "${curl_address}")
+    fi
+
+    hr "PING"
+    green "${ping_result}"
+    hr "ADDRESS"
+    green "${address_result}"
+}
+
+
+# Parse CLI status request.
+function status {
+    error_message="No such service to retrieve status from.\
+\nChoose from: $(cyan "${statuses[*]}")"
+
+    # Functions for echoing specified service status.
+    function _vpn { echo "VPN service status: $(nethub_vpn_status)"; }
+    function _edge { echo "Edge service status: $(nethub_edge_status)"; }
+    function _openvpn { echo "OpenVPN service status: $(openvpn_status)"; }
+    function _dhcp { echo "DHCP service status: $(dhcp_status)"; }
+
+    if [[ -z "${1}" ]]; then
+        # Show all statusses except for connection when no status
+        # option has been specified.
+        _vpn; _edge; _openvpn; _dhcp
+    else
+        # Parse request and show corresponding status.
+        case "${1}" in
+            vpn) _vpn;
+            ;;
+            edge) _edge;
+            ;;
+            openvpn) _openvpn;
+            ;;
+            dhcp) _dhcp;
+            ;;
+            connection) connection_status;
+            ;;
+            *)  # Unknown option.
+            raise 3 "${error_message}";
+            ;;
+        esac
+    fi
+
+    # Exit with the returned exit code of the status.
+    exit ${code}
+}
+# Download OVPN servers.
+function download_servers {
+    # Download and inflate NordVPN openvpn files.
+    url="https://downloads.nordcdn.com/configs/archives/servers/ovpn.zip"
+    wget -O ovpn.zip "${url}" && success_nord_download=true
+    unzip ovpn.zip -d nord_servers
+    rm ovpn.zip
+
+    # Check if NordVPN OpenVPN files could successfully download.
+    if [[ -n ${success_nord_download} ]]; then
+        echo "Succesfully downloaded $(blue NordVPN) OpenVPN files."
+    else
+        raise 7 "Could not download NordVPN OpenVPN files."
+    fi
+
+    # Display that ProtonVPN server files should be downloaded form the site.
+    link="https://account.protonvpn.com/downloads#openvpn-configuration-files"
+    echo "Please download $(green ProtonVPN) OpenVPN files from \
+$(underline "${link}")"
+    echo "Unzip the .ovpn files under the folders proton_standard_servers\
+    and proton_secure_servers."
+}
+
+function stop_service {
+    case "${1}" in
+        vpn) stop_vpn_service;
+        ;;
+        edge) stop_edge_service;
+        ;;
+        *) raise 3 "No such service. Choose either vpn or edge.";
+        ;;
+    esac
+}
+
+function start_service {
+    case "${1}" in
+        nord|proton) restart_vpn_service "${argument}";
+        ;;
+        edge) restart_edge_service ;
+        ;;
+    esac
+}
+
+# Sets the action that should be run allowing functions to be run with
+# other argument flags and prevents multiple actions from being run with
+# a single command.
+function set_action {
+    if [[ -z ${action} ]]; then
+        # Opt and arg are emptied at the end of the while loop that parses
+        # all the options and arguments so here they are made persistent.
+        action="${opt}"
+        argument="${arg}"
+    else
+        raise 4 "You can run one action at a time."
+    fi
+}
+
+# Parse all the arguments until there are none left.
+while [[ $# -gt 0 ]]; do
+    # Aassign the -/-- option and it's argument
+    # so they can be used in functions without being passed.
+    opt="${1}"; arg="${2}"
+
+    case "${1}" in
+        -h|--help)
+        man nethub; [ $# -eq 1 ] && exit 0;
+        ;;
+        connect)
+        check_arg; check_vpn; set_action;
+        ;;
+        disconnect)
+        check_arg; set_action;
+        ;;
+        --disable)
+        disable_service=true;
+        ;;
+        --enable)
+        enable_service=true;
+        ;;
+        search)
+        check_arg; check_vpn; set_action;
+        ;;
+        --tcp)
+        tcp_toggle=true
+        ;;
+        --udp)
+        udp_toggle=true
+        ;;
+        --country)
+        check_country; country_filter="${arg}"
+        ;;
+        --node)
+        node_toggle=true;
+        ;;
+        --secure)
+        secure_toggle=true;
+        ;;
+        download)
+        set_action;
+        ;;
+        set)
+        check_arg; check_vpn; set_action;
+        ;;
+        -u|--username)
+        check_arg; username="${arg}";
+        ;;
+        -p|--password)
+        check_arg; password="${arg}";
+        ;;
+        -s|--server)
+        check_arg; server="${arg}";
+        ;;
+        --port)
+        check_arg; port="${arg}";
+        ;;
+        --community)
+        check_arg; community="${arg}";
+        ;;
+        --fedkey)
+        check_arg; fedkey="${arg}";
+        ;;
+        --key)
+        check_arg; key="${arg}";
+        ;;
+        get)
+        check_arg; set_action;
+        ;;
+        -r|--restart)
+        restart=true
+        ;;
+        status)
+        set_action;
+        ;;
+        -a|--advanced)
+        advanced=true;
+        ;;
+        --debugging)
+        debugging=true;
+        ;;
+        -i|--interface)
+        start_interface;
+        ;;
+        --*|-*)  # Unknown -/-- options.
+        raise 4 "Option ${opt} doesn't exist."
+        ;;
+    esac
+    # Shift positional parameters.
+    # i.e. del <- $1 <- $2
+    shift
+done
+
+# Run the given action flag.
+case "${action}" in
+    connect) start_service "${argument}";
+    ;;
+    disconnect) stop_service "${argument}";
+    ;;
+    search) search_servers "${argument}";
+    ;;
+    download) download_servers;
+    ;;
+    set) apply_settings "${argument}";
+    ;;
+    get) get "${argument}";
+    ;;
+    status) status "${argument}";
+    ;;
+esac
