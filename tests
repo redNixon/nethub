@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --------------------------------Testing--------------------------------------
-# Custom testing framework for nethub.
+# Custom testing framework for Nethub.
 # -----------------------------------------------------------------------------
 
 # Imports.
@@ -11,8 +11,8 @@
 failed=0
 passed=0
 
-# Sets the status for the last command
-# and increments failed or passed tests variable.
+# Sets the status for the last command and increments failed or
+# passed tests variable.
 # $1 : bool : forced exitcode
 function check_exit {
     # Set the exit code as forced failure or as actual exitcode.
