@@ -194,8 +194,13 @@ function nethub_vpn_status {
 
 # Return Error if the connection to supernode isn't successful.
 function nethub_edge_health {
-    if [[ "$(systemctl status nethub_edge.service)" = *"ERROR"* ]]; then
+    service_output="$(systemctl status nethub_edge.service | tail -n1)"
+    if [[ "${service_output}" = *"ERROR"* ]]; then
         red "Error"; code=1
+    elif [[ "${service_output}" = *"supernode not responding"* ]]; then
+        red "Timeout"; code=1
+    elif [[ "${service_output}" = *"asking for IP address"* ]]; then
+        red "Waiting"; code=1
     else
         green "Running"; code=0
     fi
