@@ -206,6 +206,11 @@ function nethub_edge_health {
     fi
 }
 
+# Displays the ip address for the edge.
+function edge_address {
+    ip a | grep -oP "(?=.+edge0)[\d\.]+\/\d+"
+}
+
 # Displays the NetHub vpn service status.
 function nethub_edge_status {
     if [[ -z ${advanced} ]]; then

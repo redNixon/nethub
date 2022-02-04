@@ -198,6 +198,9 @@ function status_dialog {
     VPN: $(nethub_vpn_status)
     Edge: $(nethub_edge_status)
 
+    $(blue CONNECTION)
+    Edge: $(edge_address)
+
     $(blue CREDENTIALS)
     ProtonVPN: ${protonvpn_status}
     NordVPN: ${nordvpn_status}
