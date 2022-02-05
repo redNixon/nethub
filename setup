@@ -224,6 +224,25 @@ function configure_permissions {
     fi
 }
 
+# Confure autologin for the local TTY terminal.
+function configure_autologin {
+
+    # Ask for confirmation.
+    message="\Z1Do you want to configure autologin for local TTY terminal?"
+    dialog --colors --backtitle "Nethub ${NETHUB_VERSION} Setup"\
+    --yesno "${message}" 0 0
+
+    # If answer is yes, configure autologin.
+    mkdir -p /etc/systemd/system/getty@tty1.service.d
+    cat <<EOT > /etc/systemd/system/getty@tty1.service.d/override.conf
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --noissue --autologin $SUDO_USER %I \$TERM
+Type=idle
+EOT
+    
+}
+
 
 display_warning
 define_interfaces
@@ -235,3 +254,4 @@ configure_services
 configure_bashrc
 configure_manpage
 configure_permissions
+configure_autologin
