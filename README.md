@@ -152,4 +152,4 @@ In order to get new devices or servers into the N2N P2P network without installi
 1. Copy the configured `nethub.conf` file to the target server.
 1. Copy the [nethub_edge](nethub_edge) script to the target server.
 1. Copy the [libraries folder for the exceptions.sh](libraries/exceptions.sh).
-1. Invoke `sudo ./nethub_edge` or create a service.
+1. Invoke `sudo ./nethub_edge` or create an edge.
