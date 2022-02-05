@@ -182,7 +182,12 @@ function nethub_vpn_status {
             green "Running"; code=0
         else
             if systemctl is-enabled --quiet nethub_vpn.service; then
-                red "Stopped"; code=1
+                service_output="$(systemctl status nethub_vpn.service | tail -n2)"
+                if [[ "${service_output}" = *"auth"* ]]; then
+                    red "Authentication"; code=1
+                else
+                    red "Stopped"; code=1
+                fi
             else
                 red "Disabled"; code=1
             fi
