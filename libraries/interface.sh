@@ -104,13 +104,13 @@ function supernode_dialog {
 
     values=($(dialog --stdout --form\
     "Supernode settings" 0 0 0 \
-	"Address"           1 1	"${supernode_address}" 1 20 30 0 \
-	"Port:"             2 1	"${supernode_port}" 2 20 30 0\
-    "Community"         3 1 "${supernode_community}" 3 20 30 0\
-    "Federation"        4 1 "${supernode_fedkey}" 4 20 30 0\
-    "Encryption Key"    5 1 "${supernode_key}" 5 20 30 0\
-    "Username"          6 1 "${supernode_username}" 6 20 30 0\
-    "Password"          7 1 "${supernode_password}" 7 20 30 0))
+	"Address"           1 1	"${supernode_address}" 1 20 50 0 \
+	"Port:"             2 1	"${supernode_port}" 2 20 50 0\
+    "Community"         3 1 "${supernode_community}" 3 20 50 0\
+    "Federation"        4 1 "${supernode_fedkey}" 4 20 50 0\
+    "Encryption Key"    5 1 "${supernode_key}" 5 20 50 0\
+    "Username"          6 1 "${supernode_username}" 6 20 50 0\
+    "Password"          7 1 "${supernode_password}" 7 20 50 0))
 
     [[ -n "${values[0]}" ]] && supernode_address="${values[0]}"
     [[ -n "${values[1]}" ]] && supernode_port="${values[1]}"
