@@ -177,21 +177,41 @@ function search_servers {
 
 # Displays the NetHub vpn service status.
 function nethub_vpn_status {
-    if [[ -z ${advanced} ]]; then
-        if systemctl is-active --quiet nethub_vpn.service; then
-            green "Running"; code=0
+
+    # Returns if nethub_vpn.service is active.
+    function vpn_service_active {
+        systemctl is-active --quiet nethub_vpn.service
+    }
+
+    # Returns if nethub_vpn.service is enabled.
+    function vpn_service_enabled {
+        systemctl is-enabled --quiet nethub_vpn.service
+    }
+
+    # Returns if and, in case of an error, why nethub_vpn.service is stopped.
+    function check_vpn_service_erros {
+        service_output="$(systemctl status nethub_vpn.service | tail -n2)"
+        if [[ "${service_output}" = *"auth"* ]]; then
+            red "Authentication"; code=1
         else
-            if systemctl is-enabled --quiet nethub_vpn.service; then
-                service_output="$(systemctl status nethub_vpn.service | tail -n2)"
-                if [[ "${service_output}" = *"auth"* ]]; then
-                    red "Authentication"; code=1
-                else
-                    red "Stopped"; code=1
-                fi
-            else
-                red "Disabled"; code=1
-            fi
+            red "Stopped"; code=1
         fi
+    }
+
+    # Run an advanced status check on the nethub_vpn.service.
+    function advanced_status_check {
+        if vpn_service_active; then
+            green "Running"; code=0
+        elif vpn_service_enabled; then
+            check_vpn_service_erros
+        else
+            red "Disabled"; code=1
+        fi
+    }
+
+    # If the --advanced / -a option is used.
+    if [[ -z ${advanced} ]]; then
+        advanced_status_check
     else
         systemctl status nethub_vpn.service
     fi
@@ -199,35 +219,69 @@ function nethub_vpn_status {
 
 # Return Error if the connection to supernode isn't successful.
 function nethub_edge_health {
+
     service_output="$(systemctl status nethub_edge.service | tail -n1)"
+
+    # Check service output for specific error messages.
+    function check_errors {
+        if [[ "${service_output}" = *"authentication error"* ]]; then
+            red "Authentication"
+        else
+            red "Error"
+        fi
+    }
+
+    # If an error message was given.
     if [[ "${service_output}" = *"ERROR"* ]]; then
-        red "Error"; code=1
+        code=1
+        check_errors
+
+    # If supernode is not responding.
     elif [[ "${service_output}" = *"supernode not responding"* ]]; then
         red "Timeout"; code=1
+
+    # If still asking for an IP address from the supernode.
     elif [[ "${service_output}" = *"asking for IP address"* ]]; then
         red "Waiting"; code=1
+
+    # If no problems have been found.
     else
         green "Running"; code=0
     fi
 }
 
-# Displays the ip address for the edge.
+# Returns the ip address for the edge.
 function edge_address {
     ip a | grep -oP "(?=.+edge0)[\d\.]+\/\d+"
 }
 
 # Displays the NetHub vpn service status.
 function nethub_edge_status {
-    if [[ -z ${advanced} ]]; then
-        if systemctl is-active --quiet nethub_edge.service; then
+
+    # Returns if nethub_edge.service is active.
+    function edge_service_active {
+        systemctl is-active --quiet nethub_edge.service
+    }
+
+    # Returns if nethub_edge.service is enabled.
+    function edge_service_enabled {
+        systemctl is-enabled --quiet nethub_edge.service
+    }
+
+    # Run advanced status check on nethub_edge.service.
+    function advanced_status_check {
+        if edge_service_active; then
             nethub_edge_health
+        elif edge_service_enabled; then
+            red "Stopped"; code=1
         else
-            if systemctl is-enabled --quiet nethub_edge.service; then
-                red "Stopped"; code=1
-            else
-                red "Disabled"; code=1
-            fi
+            red "Disabled"; code=1
         fi
+    }
+
+    # If --advanced option is used.
+    if [[ -z ${advanced} ]]; then
+        advanced_status_check
     else
         systemctl status nethub_edge.service
     fi
@@ -235,16 +289,31 @@ function nethub_edge_status {
 
 # Displays the OpenVPN service status.
 function openvpn_status {
-    if [[ -z ${advanced} ]]; then
-        if systemctl is-active --quiet openvpn.service; then
+
+    # Returns if the openvpn.service is active.
+    function openvpn_service_active {
+        systemctl is-active --quiet openvpn.service
+    }
+
+    # Returns if openvpn.service is enabled.
+    function openvpn_service_enabled {
+        systemctl is-enabled --quiet openvpn.service
+    }
+
+    # Run advanced status check on openvpn.service.
+    function advanced_status_check {
+        if openvpn_service_active; then
             green "Running"; code=0
+        elif openvpn_service_enabled; then
+            red "Stopped"; code=1
         else
-            if systemctl is-enabled --quiet openvpn.service; then
-                red "Stopped"; code=1
-            else
-                red "Disabled"; code=1
-            fi
+            red "Disabled"; code=1
         fi
+    }
+
+    # If --advanced option is used.
+    if [[ -z ${advanced} ]]; then
+        advanced_status_check
     else
         systemctl status openvpn.service
     fi
@@ -253,16 +322,31 @@ function openvpn_status {
 
 # Displays the DHCP service status.
 function dhcp_status {
-    if [[ -z ${advanced} ]]; then
-        if systemctl is-active --quiet isc-dhcp-server.service; then
+
+    # Returns if isc-dhcp-server.service is active.
+    function dhcp_service_active {
+        systemctl is-active --quiet isc-dhcp-server.service
+    }
+
+    # Returns if isc-dhcp-server.service is enabled.
+    function dhcp_service_enabled {
+        systemctl is-enabled --quiet isc-dhcp-server.service
+    }
+
+    # Run advanced status check on isc-dhcp-server.service.
+    function advanced_status_check {
+        if dhcp_service_active; then
             green "Running"; code=0
+        elif dhcp_service_enabled; then
+            red "Stopped"; code=1
         else
-            if systemctl is-enabled --quiet isc-dhcp-server.service; then
-                red "Stopped"; code=1
-            else
-                red "Disabled"; code=1
-            fi
+            red "Disabled"; code=1
         fi
+    }
+
+    # If --advanced option is used.
+    if [[ -z ${advanced} ]]; then
+        advanced_status_check
     else
         systemctl status isc-dhcp-server.service
     fi
