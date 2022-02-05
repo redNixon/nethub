@@ -93,8 +93,8 @@ function security_dialog {
     2 "Disable")
 
     case $selection in
-        1) secure_toggle=true ;;
-        2) secure_toggle=false ;;
+        1) secure_toggle=true; secure_mode=true ;;
+        2) secure_toggle=false; secure_mode=false ;;
     esac
 
     write_settings
