@@ -1,6 +1,6 @@
 .\" Manpage for Nethub.
 .\" Contact ... to correct errors or typos.
-.TH man 1 "13 Dec 2021" "V0.0.1" "Nethub man page"
+.TH man 1 "13 Dec 2021" "V1.0.0" "Nethub man page"
 
 .SH NAME
 Nethub \- Networking tool for VPN gateways, proxying and P2P networking.

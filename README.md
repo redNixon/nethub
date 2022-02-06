@@ -1,6 +1,6 @@
 # Nethub
 
-![release](https://img.shields.io/badge/Release-0.0-yellow)
+![release](https://img.shields.io/badge/Release-1.0.0-yellow)
 ![platform](https://img.shields.io/badge/Platform-Ubuntu%2020%20LTS-orange)
 ![vpns](https://img.shields.io/badge/Connections-NordVPN%20|%20ProtonVPN%20|%20N2N-blue)
 

@@ -3,7 +3,7 @@
 # Stop if an error occurs.
 set -e
 
-NETHUB_VERSION="V0.0.1"
+NETHUB_VERSION="V1.0.0"
 
 # Display a confirmation message for installing Nethub.
 function display_warning {
