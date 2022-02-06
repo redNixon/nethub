@@ -2,6 +2,11 @@
 
 # --------------------------------Testing--------------------------------------
 # Custom testing framework for Nethub.
+#
+# Warning: sometimes NordVPN or ProtonVPN may throw an authentication-error if
+# client's switch VPN servers too frequently. It resolves itself after waiting
+# a couple of seconds.
+#
 # -----------------------------------------------------------------------------
 
 # Imports.
