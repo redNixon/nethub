@@ -7,10 +7,23 @@
 function choose_country_dialog {
     # Get a country abbriviation like us, be or ch.
     country_filter=$(dialog --stdout --no-cancel --inputbox "Country Abbriviation" 0 0)
+    
     # Restart the VPN service which will use the new country_filter variable.
-    restart_vpn_service "${vpn}"
-    # Show an estimate timeout for connecting to the new server.
-    dialog --sleep 4 --infobox "Connecting to server..." 0 0
+    restart_result=$(restart_vpn_service "${vpn}")
+
+    if $restart_result = true; then
+        # Show an estimate timeout for connecting to the new server.
+        dialog --sleep 4 --infobox "Connecting to server..." 0 0
+    else
+        # Show message that no server could be found.
+        if $secure_mode = true; then
+            message=$(red "Could not find a secure server for that country.")
+        else
+            message=$(red "Could not find a server for that country.")
+        fi
+        dialog --colors --sleep 4 --infobox "${message}" 0 0
+    fi
+
 }
 
 function choose_vpn_dialog {
@@ -223,6 +236,6 @@ function status_dialog {
 function start_interface {
     # Alters output of functions in libraries and the main nethub script.
     interface_mode=true
-    if secure_mode; then secure_toggle=true; fi
+    if $secure_mode = true; then secure_toggle=true; else secure_toggle=false; fi
     status_dialog
 }

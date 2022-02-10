@@ -47,14 +47,23 @@ function restart_vpn_service {
         random_flag=true
         server=$(search_servers "${1}")
     fi
-    # Setting $vpn will make apply_settings save the vpn variable.
-    # It normally doesn't do this so you can set specific vpn settings
-    # without changing the vpn selected to be active.
-    vpn="${1}"
-    # Saves the $server and $vpn to nethub.conf.
-    apply_settings "${1}"
-    # Restarts the nethub service to connect conform new settings.
-    sudo systemctl restart nethub_vpn.service
+
+    # Don't restart VPN service or apply settings if no server was found.
+    if [[ -z "${server// }" ]]; then
+        # Tell interface no server was found.
+        echo false
+    else
+        # Tell interface a server was found.
+        echo true
+        # Setting $vpn will make apply_settings save the vpn variable.
+        # It normally doesn't do this so you can set specific vpn settings
+        # without changing the vpn selected to be active.
+        vpn="${1}"
+        # Saves the $server and $vpn to nethub.conf.
+        apply_settings "${1}"
+        # Restarts the nethub service to connect conform new settings.
+        sudo systemctl restart nethub_vpn.service
+    fi
 }
 
 # Restart nethub_edge.service and establish supernode connection.
