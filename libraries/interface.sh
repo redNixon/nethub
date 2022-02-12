@@ -4,15 +4,19 @@
 # Interface library for Nethub.
 # -----------------------------------------------------------------------------
 
+# TODO: I know this is very ugly!
+# I'll short the data later for a better function.
 function choose_country_dialog {
 
     # Fetch data from resources file.
     data=$(cat resources/countries)
+    data_two=$(cat resources/codes)
 
     # Returns country's code of given country.
     # $1 : str : country
     function get_country_code {
-        echo "${data}" | grep -oP "(?<=$1\s)\w{2}"
+        three=$(echo "${data}" | grep -oP "(?<=$1\s)\w{3}")
+        echo "${data_two}" | grep -oP "\w{2}(?=\s$three)"
     }
 
     # Returns countries of given continent.
@@ -80,21 +84,10 @@ function choose_country_dialog {
     # Set the country filter as country code and translate it lowercase.
     country_filter=$(get_country_code "${country}" | tr '[:upper:]' '[:lower:]')
     
-    # Restart the VPN service which will use the new country_filter variable.
-    restart_result=$(restart_vpn_service "${vpn}")
+    # Wait for the VPN to connect, or not to.
+    wait_vpn_connect
 
-    if $restart_result = true; then
-        # Show an estimate timeout for connecting to the new server.
-        dialog --sleep 4 --infobox "Connecting to server..." 0 0
-    else
-        # Show message that no server could be found.
-        if $secure_mode = true; then
-            message=$(red "Could not find a secure server for that country.")
-        else
-            message=$(red "Could not find a server for that country.")
-        fi
-        dialog --colors --sleep 4 --infobox "${message}" 0 0
-    fi
+
 
 }
 
@@ -227,34 +220,95 @@ function settings_dialog {
     esac
 }
 
-function menu_dialog {
-    selection=$(dialog --stdout --colors --ok-label "Select"\
-    --backtitle "Nethub ${NETHUB_VERSION}"\
-    --menu "Menu Options" 0 0 0\
-    1 "Show connection"\
-    2 "Connect VPN"\
-    3 "Re-Connect VPN"\
-    4 "Disconnect VPN"\
-    5 "Connect EDGE"\
-    6 "Leave EDGE"\
-    7 "Settings")
+function wait_vpn_connect {
 
-    case $selection in
-        1) connection_dialog ;;
-        2) connect_dialog ;;
-        3) sudo systemctl restart nethub_vpn.service ;;
-        4) stop_vpn_service ;;
-        5) sudo systemctl restart nethub_edge.service ;;
-        6) sudo systemctl stop nethub_edge.service ;;
-        7) settings_dialog ;;
-    esac
+    function google_ping {
+        ping -c 8.8.8.8 2>&1 >/dev/null
+        echo $?
+    }
 
-    status_dialog
+    # Restart the nethub_vpn.service.
+    restart_result=$(restart_vpn_service "${vpn}")
+
+    if $restart_result = true; then
+        # Wait for being able to ping to Google.
+        i=10
+        while [ $() -ne 0 ] && [ $i -ge 0 ]; do
+            dialog --infobox "Connecting to VPN. Taking $i seconds." 0 0
+            sleep 1
+            let "i-=1"
+            google_ping
+        done
+
+        # If 10 seconds passed show a time-out message.
+        if [ $i -le 0 ]; then
+            message="\Z1Timed out...\Zn"
+            dialog --colors --backtitle "Failure"\
+            --msgbox "${message}" 0 0
+        fi
+    else
+        # Show message that no server could be found.
+        if $secure_mode = true; then
+            message=$(red "Could not find a secure server for $country, $country_filter.")
+        else
+            message=$(red "Could not find a server for $country, $country_filter.")
+        fi
+        dialog --colors --sleep 4 --infobox "${message}" 0 0
+    fi
+
 
 }
 
-function status_dialog {
+# Shows a waiting screen waiting for the vpn to connect.
+function wait_vpn_restart {
 
+    function google_ping {
+        ping -c 8.8.8.8 2>&1 >/dev/null
+        echo $?
+    }
+
+    # Restart the nethub_vpn.service.
+    sudo systemctl restart nethub_vpn.service
+
+    # Wait for being able to ping to Google.
+    i=10
+    while [ $() -ne 0 ] && [ $i -ge 0 ]; do
+        dialog --infobox "Connecting to VPN. Taking $i seconds." 0 0
+        sleep 1
+        let "i-=1"
+        google_ping
+    done
+
+    # If 10 seconds passed show a time-out message.
+    if [ $i -le 0 ]; then
+        message="\Z1Timed out...\Zn"
+        dialog --colors --backtitle "Failure"\
+        --msgbox "${message}" 0 0
+    fi
+}
+
+# Shows a waiting screen waiting for the edge to connect.
+function wait_edge {
+    # Restart the nethub_edge.service.
+    sudo systemctl restart nethub_edge.service
+
+    # Wait for and edge address for up to 10 seconds.
+    i=10
+    while [ -z "$(edge_address)" ] && [ $i -ge 0 ]; do
+        dialog --infobox "Connecting to edge. Taking $i seconds." 0 0
+        sleep 1
+        let "i-=1"
+    done
+
+    # If 10 seconds passed show a time-out message.
+    if [ $i -le 0 ]; then
+        message="\Z1Timed out...\Zn"
+        dialog --colors --backtitle "Failure"\
+        --msgbox "${message}" 0 0
+    fi
+}
+
+function reload_status {
     # Refresh the configuration variables.
     . nethub.conf
 
@@ -271,17 +325,55 @@ function status_dialog {
         protonvpn_status=$provided_string
     fi
 
-    
+    # Get other static variables.
     current_provider="$(get vpn)"
     current_country="$(get country)"
     current_server="$(get server | grep -oP \\d+)"
     current_protocol="$(get server | grep -oP "(udp|tcp)(?=.ovpn)")"
 
+    # Get dynamic statuses.
+    current_vpn_status=$(nethub_vpn_status)
+    current_edge_status=$(nethub_edge_status)
+}
 
+function menu_dialog {
+    selection=$(dialog --stdout --colors --ok-label "Select"\
+    --backtitle "Nethub ${NETHUB_VERSION}"\
+    --menu "Menu Options" 0 0 0\
+    1 "Refresh"\
+    2 "Show connection"\
+    3 "Connect VPN"\
+    4 "Re-Connect VPN"\
+    5 "Disconnect VPN"\
+    6 "Connect EDGE"\
+    7 "Leave EDGE"\
+    8 "Settings")
+
+    case $selection in
+        1) reload_status ;;
+        2) connection_dialog ;;
+        3) connect_dialog ;;
+        4) wait_vpn_restart ;;
+        5) stop_vpn_service ;;
+        6) wait_edge ;;
+        7) sudo systemctl stop nethub_edge.service ;;
+        8) settings_dialog ;;
+    esac
+
+    # Go back to status dialog.
+    status_dialog
+
+}
+
+function status_dialog {
+    # Load status variables.
+    reload_status
+
+    # Create message.
     message="
     $(blue SERVICES)
-    VPN: $(nethub_vpn_status)
-    Edge: $(nethub_edge_status)
+    VPN: ${current_vpn_status}
+    Edge: ${current_edge_status}
 
     $(blue CONNECTION)
     Edge: $(edge_address)
@@ -297,11 +389,13 @@ function status_dialog {
     Protocol: ${current_protocol}
     "
 
-    dialog --colors --ok-label "MENU"\
+    # Show message box with statuses.
+    dialog --colors --ok-label "Menu"\
     --backtitle "Nethub ${NETHUB_VERSION}"\
     --title "Status Interface"\
     --msgbox "${message}" 0 0
 
+    # Show menu dialog after message with statuses.
     menu_dialog
 }
 
