@@ -5,8 +5,80 @@
 # -----------------------------------------------------------------------------
 
 function choose_country_dialog {
-    # Get a country abbriviation like us, be or ch.
-    country_filter=$(dialog --stdout --no-cancel --inputbox "Country Abbriviation" 0 0)
+
+    # Fetch data from resources file.
+    data=$(cat resources/countries)
+
+    # Returns country's code of given country.
+    # $1 : str : country
+    function get_country_code {
+        echo "${data}" | grep -oP "(?<=$1\s)\w{2}"
+    }
+
+    # Returns countries of given continent.
+    # $1 : str : continent
+    function get_countries {
+        # Get all the countries and their data in given continent.
+        results=$(echo "${data}" | grep -P "$1$")
+        # Remove data from countries keeping just their names.
+        countries=$(echo "${results}" | grep -oP "(?<=\d\s)[\S ]+(?=\s\w{3}\s\d)")
+        # Return the countries.
+        echo "${countries}"
+    }
+
+    # Shows menu dialog for choosing a continent.
+    function select_continent {
+        # Show continents.
+        option=$(dialog --no-cancel --ok-label "Submit" --stdout --menu "Continents" 0 0 0\
+            1 "Africa"\
+            2 "Antarctica"\
+            3 "Asia"\
+            4 "Europe"\
+            5 "North America"\
+            6 "Oceania"\
+            7 "South America")
+
+        # Translate user choice to continent.
+        case $option in
+            1) continent="Africa" ;;
+            2) continent="Antarctica" ;;
+            3) continent="Asia" ;;
+            4) continent="Europe" ;;
+            5) continent="North America" ;;
+            6) continent="Oceania" ;;
+            7) continent="South America" ;;
+        esac
+    }
+
+    # Creates and shows menu dialog for choosing country in given continent.
+    function select_country {
+        
+        # Create variables for dynamic menu creation.
+        declare -a array; i=1; j=1
+
+        # Dynamically create the countries menu.
+        while read line; do 
+            array[ $i ]=$j
+            (( j++ ))
+            array[ ($i + 1) ]=$line
+            (( i=($i+2) ))
+        done < <(get_countries "$continent")
+
+        # Show the countries and let the user select one.
+        option=$(dialog --no-cancel --ok-label "Submit" --stdout --menu\
+            "Countries" 0 0 0 "${array[@]}")
+
+        # Translate user choice to country.
+        country=$( echo "${array[@]}" |
+            grep -oP "(?<=(?<!\d)$option )[^\d]+(?= )")
+    }
+
+    # Show continent selection dialog.
+    select_continent
+    # Show country selection dialog.
+    select_country
+    # Set the country filter as country code and translate it lowercase.
+    country_filter=$(get_country_code "${country}" | tr '[:upper:]' '[:lower:]')
     
     # Restart the VPN service which will use the new country_filter variable.
     restart_result=$(restart_vpn_service "${vpn}")

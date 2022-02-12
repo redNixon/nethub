@@ -7,3 +7,5 @@ nethub.conf
 
 # Ignored folders.
 nethub_*_amd64
+.venv
+.vscode
