@@ -8,26 +8,15 @@
 # I'll short the data later for a better function.
 function choose_country_dialog {
 
-    # Fetch data from resources file.
-    data=$(cat resources/countries)
-    data_two=$(cat resources/codes)
-
-    # Returns country's code of given country.
-    # $1 : str : country
-    function get_country_code {
-        three=$(echo "${data}" | grep -oP "(?<=$1\s)\w{3}")
-        echo "${data_two}" | grep -oP "\w{2}(?=\s$three)"
+    # $1 : str : continent
+    function continent_to_countries {
+        grep -P "\| $1$" resources/countries | cut -d '|' -f 5
     }
 
-    # Returns countries of given continent.
-    # $1 : str : continent
-    function get_countries {
-        # Get all the countries and their data in given continent.
-        results=$(echo "${data}" | grep -P "$1$")
-        # Remove data from countries keeping just their names.
-        countries=$(echo "${results}" | grep -oP "(?<=\d\s)[\S ]+(?=\s\w{3}\s\d)")
-        # Return the countries.
-        echo "${countries}"
+    # $1 : str : country
+    function country_to_2code {
+        regex="(?<=\| )[A-Z]{2}(?= \|)" # | DE |
+        grep -P "$1" resources/countries | grep -oP "$regex"
     }
 
     # Shows menu dialog for choosing a continent.
@@ -66,7 +55,7 @@ function choose_country_dialog {
             (( j++ ))
             array[ ($i + 1) ]=$line
             (( i=($i+2) ))
-        done < <(get_countries "$continent")
+        done < <(continent_to_countries "$continent")
 
         # Show the countries and let the user select one.
         option=$(dialog --no-cancel --ok-label "Submit" --stdout --menu\
@@ -82,7 +71,7 @@ function choose_country_dialog {
     # Show country selection dialog.
     select_country
     # Set the country filter as country code and translate it lowercase.
-    country_filter=$(get_country_code "${country}" | tr '[:upper:]' '[:lower:]')
+    country_filter=$(country_to_2code "${country}" | tr '[:upper:]' '[:lower:]')
     
     # Wait for the VPN to connect, or not to.
     wait_vpn_connect
@@ -251,7 +240,7 @@ function wait_vpn_connect {
         if $secure_mode = true; then
             message=$(red "Could not find a secure server for $country, $country_filter.")
         else
-            message=$(red "Could not find a server for $country, $country_filter.")
+            message=$(red "Could not find a server for $country,$country_filter.")
         fi
         dialog --colors --sleep 4 --infobox "${message}" 0 0
     fi
