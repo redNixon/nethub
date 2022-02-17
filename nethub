@@ -5,7 +5,7 @@
 # ----------------------------------------------------------------------------
 
 # Nethub version string.
-NETHUB_VERSION="V1.0.0"
+NETHUB_VERSION="V1.1.0"
 
 # Alters output of functions in libraries and the main nethub script.
 interface_mode=false
