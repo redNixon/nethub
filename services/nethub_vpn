@@ -26,7 +26,13 @@ printf "${username}\n${password}" > "${vpn}".creds
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
 # Establish connection with the configured openvpn server file.
-# The --route option enables connection to supernode without a VPN connection.
-openvpn --config "${server}" \
---auth-user-pass ./"${vpn}".creds \
---route "${supernode_address}" 255.255.255.255 net_gateway
+if [[ "${supernode_bypass_vpn}" = true ]]; then
+    # The --route option enables connection to supernode without a VPN connection.
+    openvpn --config "${server}" \
+    --auth-user-pass ./"${vpn}".creds \
+    --route "${supernode_address}" 255.255.255.255 net_gateway
+else
+    # Establish connection with the configured openvpn server file.
+    openvpn --config "${server}" \
+    --auth-user-pass ./"${vpn}".creds
+fi

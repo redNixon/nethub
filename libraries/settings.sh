@@ -26,6 +26,7 @@ supernode_fedkey="${supernode_fedkey}"
 supernode_key="${supernode_key}"
 supernode_username="${supernode_username}"
 supernode_password="${supernode_password}"
+supernode_bypass_vpn="${supernode_bypass_vpn}"
 EOT
 }
 
