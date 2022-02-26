@@ -31,8 +31,7 @@ Shares  |                | Nethub 3
 
 ## Architecture
 
-- ❗ To allow IP whitelisting on the supernode, __Nethub's Edge service bypasses the NordVPN or ProtonVPN connection__ provided by Nethub's VPN service.
-There's no setting to enable or disable this yet.
+- ❗ To allow IP whitelisting on the supernode by bypassing the VPN for P2P connections, supernode_bypass_vpn can be set to true.
 - 🚀 Any device connected to Nethub's LAN interface will be automatically connected through DHCP.
 
 ---
