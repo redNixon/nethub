@@ -31,7 +31,7 @@ Shares  |                | Nethub 3
 
 ## Architecture
 
-- ❗ To allow IP whitelisting on the supernode by bypassing the VPN for P2P connections, supernode_bypass_vpn can be set to true.
+- ❗ To allow IP whitelisting on the supernode by bypassing the VPN for P2P connections, supernode_bypass_vpn in nethub.conf can be set to true.
 - 🚀 Any device connected to Nethub's LAN interface will be automatically connected through DHCP.
 
 ---
