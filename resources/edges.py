@@ -3,6 +3,15 @@
 import json
 import socket
 import datetime
+import os.path
+
+# Load macaddr registration.
+# Content of devices.json should be like:
+# {"MA:CA:DD:RE:SS:00":"Description"}
+devices = {}
+if os.path.isfile('devices.json'):
+    with open('devices.json', 'r') as file:
+        devices = json.load(file)
 
 # Create and connect local UDP socket to supernode management.
 local_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -29,4 +38,15 @@ while row['_type']!='end':
         row['last_seen'] = date_time.strftime('%Y-%m-%d %H:%M:%S')
 
         # Show the entire row.
-        print(row)
+        print("-"*20)
+        print("user:", row["desc"])
+        print("community:", row["community"])
+        # Check if device is regisred in devices.json
+        if row["macaddr"] in devices:
+            print("device:", devices[row["macaddr"]])
+        else:
+            print("device:", "unknown")
+        print("from:", row["sockaddr"])
+        print("mac:", row["macaddr"])
+        print("to:", row["ip4addr"])
+        print("seen:", row["last_seen"])

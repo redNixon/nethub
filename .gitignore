@@ -9,3 +9,4 @@ nethub.conf
 nethub_*_amd64
 .venv
 .vscode
+resources/devices.json
